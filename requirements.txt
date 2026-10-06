@@ -1,0 +1,7 @@
+numpy
+matplotlib
+soundfile
+
+# solo para compilar el ejecutable y el arrastrar-y-soltar de la ventana
+pyinstaller
+tkinterdnd2

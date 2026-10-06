@@ -1,0 +1,21 @@
+__pycache__
+*/__pycache__
+
+# entorno virtual
+/.venv/
+/venv/
+/env/
+
+# salidas del analizador
+*.spectro.png
+perfiles/
+
+# compilacion
+/build
+/dist
+
+# editores
+.idea
+.vscode
+*.sw?
+.DS_Store
