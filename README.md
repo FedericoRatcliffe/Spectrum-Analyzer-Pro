@@ -1,5 +1,7 @@
 # Spectrum Analyzer Pro
 
+**Español** · [English](README.en.md)
+
 Inspecciona archivos de audio y dice si un FLAC es genuino o viene de una
 fuente con pérdida, además de medir la calidad del máster y comparar el
 balance tonal contra perfiles de referencia.
