@@ -36,15 +36,13 @@ import spectro_profile
 import spectro_reference
 import ui_theme
 from ui_theme import (ACCENT, BG, BLUE, BLUE_DIM, BLUE_SOFT, BORDER, DIM, FG,
-                      PANEL, PANEL_ALT, fuente)
+                      PANEL, PANEL_ALT, fuente, px)
 
 try:
     from tkinterdnd2 import DND_FILES, TkinterDnD
     HAS_DND = True
 except ImportError:
     HAS_DND = False
-
-NAV_BG = '#C3D8E8'   # franja clara con tinte azul: los iconos son trazo oscuro
 
 FULL_CACHE_SIZE = 6   # espectrogramas guardados: 6 x 49 MB, para no recalcular al hacer clic
 
@@ -61,6 +59,18 @@ COLUMNS = [
     ('peak', 'Pico', 48),
     ('flags', 'Avisos', 120),
 ]
+
+
+class BarraGrafico(NavigationToolbar2Tk):
+    """La barra de matplotlib sin atras/adelante ni el dialogo de margenes.
+
+    En Windows un boton de imagen deshabilitado se pinta tramado, y atras y
+    adelante nacen deshabilitados: eran dos manchas grises en una franja
+    oscura. Con inicio, paneo y zoom alcanza, y los margenes ya los maneja el
+    layout 'tight'.
+    """
+    toolitems = [t for t in NavigationToolbar2Tk.toolitems
+                 if t[0] in ('Home', 'Pan', 'Zoom', 'Save')]
 
 
 class SpectroApp:
@@ -96,7 +106,12 @@ class SpectroApp:
         self.match_trabajando = False
 
         root.title('Analizador de espectro')
-        root.geometry('1320x760')
+        # A 150% el tamano de diseno no entra en una pantalla de 1080: se acota
+        ancho = min(px(1320), int(root.winfo_screenwidth() * 0.92))
+        alto = min(px(760), int(root.winfo_screenheight() * 0.86))
+        x = (root.winfo_screenwidth() - ancho) // 2
+        y = max(0, (root.winfo_screenheight() - alto) // 2 - px(24))
+        root.geometry(f'{ancho}x{alto}+{x}+{y}')
         root.configure(bg=BG)
         self._style()
 
@@ -146,7 +161,7 @@ class SpectroApp:
                             command=self.redraw, style='Barra.TRadiobutton'
                             ).pack(side='left', padx=(6, 0))
 
-        self.progress = ttk.Progressbar(bar, mode='indeterminate', length=130)
+        self.progress = ttk.Progressbar(bar, mode='indeterminate', length=px(130))
 
         self.status = tk.Label(
             self.root, text='Arrastra un archivo o una carpeta a esta ventana',
@@ -156,7 +171,7 @@ class SpectroApp:
 
     def _build_body(self):
         paned = tk.PanedWindow(self.root, orient='horizontal', bg=BG,
-                               sashwidth=6, bd=0, sashrelief='flat')
+                               sashwidth=px(8), bd=0, sashrelief='flat')
         paned.pack(fill='both', expand=True, padx=10, pady=(0, 10))
 
         left_borde = tk.Frame(paned, bg=BORDER)
@@ -166,7 +181,7 @@ class SpectroApp:
             left, columns=[c[0] for c in COLUMNS], show='headings', selectmode='browse')
         for key, label, width in COLUMNS:
             self.tree.heading(key, text=label, command=lambda k=key: self.sort_by(k))
-            self.tree.column(key, width=width, minwidth=36, anchor='w',
+            self.tree.column(key, width=px(width), minwidth=px(36), anchor='w',
                              stretch=(key == 'flags'))
         vbar = ttk.Scrollbar(left, orient='vertical', command=self.tree.yview)
         hbar = ttk.Scrollbar(left, orient='horizontal', command=self.tree.xview)
@@ -180,7 +195,7 @@ class SpectroApp:
         self.tree.bind('<<TreeviewSelect>>', self.on_select)
         for verdict, color in core.VERDICT_COLORS.items():
             self.tree.tag_configure(verdict, foreground=color)
-        paned.add(left_borde, width=520, minsize=260)
+        paned.add(left_borde, width=px(520), minsize=px(260))
 
         right_borde = tk.Frame(paned, bg=BORDER)
         cuaderno = ttk.Notebook(right_borde)
@@ -189,7 +204,7 @@ class SpectroApp:
         self.cuaderno = cuaderno
 
         right = tk.Frame(cuaderno, bg=PANEL)
-        cuaderno.add(right, text='  Verificacion  ')
+        cuaderno.add(right, text='Verificacion')
         self.fig = Figure(figsize=(8, 5), dpi=100, facecolor=PANEL)
         # El motor de layout se fija una vez y se aplica en cada dibujado,
         # tambien al redimensionar la ventana. Llamar a tight_layout() a mano
@@ -201,17 +216,7 @@ class SpectroApp:
         self.reset_axes()
         self.canvas = FigureCanvasTkAgg(self.fig, master=right)
 
-        # Los iconos de matplotlib son trazo oscuro sobre fondo transparente:
-        # sobre el fondo casi negro de la app quedaban invisibles, asi que la
-        # franja va clara. Se le da un tinte azul para que no desentone.
-        nav = NavigationToolbar2Tk(self.canvas, right, pack_toolbar=False)
-        nav.configure(bg=NAV_BG)
-        for child in nav.winfo_children():
-            try:
-                child.configure(bg=NAV_BG, highlightbackground=NAV_BG)
-            except tk.TclError:
-                pass
-        nav.update()
+        nav = self._barra_grafico(self.canvas, right)
         # La barra se empaqueta antes que el lienzo: si va despues, el lienzo
         # con expand=True le come el espacio y queda fuera de la ventana
         nav.pack(side='bottom', fill='x')
@@ -219,7 +224,37 @@ class SpectroApp:
         self._build_produccion(cuaderno)
         self._build_balance(cuaderno)
         self._build_match(cuaderno)
-        paned.add(right_borde, minsize=420)
+        paned.add(right_borde, minsize=px(420))
+
+    @staticmethod
+    def _barra_grafico(canvas, padre):
+        """Barra de zoom y paneo de matplotlib, en oscuro como el resto.
+
+        Los iconos son trazo negro, pero matplotlib (3.6+) los recolorea con el
+        color de texto del boton cuando el fondo es oscuro. Lo decide al crear
+        el boton, asi que despues de cambiar los colores hay que pedirle que
+        vuelva a armar cada imagen. Antes la franja iba clara para que se
+        vieran, y era la parte mas fuera de lugar de la ventana.
+        """
+        nav = BarraGrafico(canvas, padre, pack_toolbar=False)
+        nav.configure(bg=PANEL, bd=0, height=px(36))
+        for child in nav.winfo_children():
+            opciones = dict(bg=PANEL, fg=DIM, activebackground=ACCENT,
+                            activeforeground=FG, highlightbackground=PANEL,
+                            selectcolor=BLUE_DIM, relief='flat', overrelief='flat',
+                            bd=0)
+            for clave, valor in opciones.items():
+                try:
+                    child.configure(**{clave: valor})
+                except tk.TclError:
+                    pass
+        for boton in getattr(nav, '_buttons', {}).values():
+            try:
+                nav._set_image_for_button(boton)   # pylint: disable=protected-access
+            except (AttributeError, tk.TclError):
+                pass
+        nav.update()
+        return nav
 
     def _build_produccion(self, cuaderno):
         """Pestana de referencia: balance tonal y ancho estereo por banda.
@@ -229,7 +264,7 @@ class SpectroApp:
         mezcla.
         """
         hoja = tk.Frame(cuaderno, bg=PANEL)
-        cuaderno.add(hoja, text='  Produccion  ')
+        cuaderno.add(hoja, text='Produccion')
 
         barra = tk.Frame(hoja, bg=PANEL)
         barra.pack(fill='x', padx=10, pady=(10, 4))
@@ -283,14 +318,7 @@ class SpectroApp:
         self.ax_st = self.fig_prod.add_subplot(grilla[2])
         self.canvas_prod = FigureCanvasTkAgg(self.fig_prod, master=hoja)
 
-        nav = NavigationToolbar2Tk(self.canvas_prod, hoja, pack_toolbar=False)
-        nav.configure(bg=NAV_BG)
-        for child in nav.winfo_children():
-            try:
-                child.configure(bg=NAV_BG, highlightbackground=NAV_BG)
-            except tk.TclError:
-                pass
-        nav.update()
+        nav = self._barra_grafico(self.canvas_prod, hoja)
         nav.pack(side='bottom', fill='x')
         self.canvas_prod.get_tk_widget().pack(side='top', fill='both', expand=True,
                                               padx=8, pady=(0, 6))
@@ -322,7 +350,7 @@ class SpectroApp:
         afuera se lee de un vistazo.
         """
         hoja = tk.Frame(cuaderno, bg=PANEL)
-        cuaderno.add(hoja, text='  Balance  ')
+        cuaderno.add(hoja, text='Balance')
 
         barra = tk.Frame(hoja, bg=PANEL)
         barra.pack(fill='x', padx=10, pady=(10, 4))
@@ -361,7 +389,7 @@ class SpectroApp:
                                          show='headings', selectmode='none', height=8)
         for clave, titulo, ancho in cols:
             self.tabla_bandas.heading(clave, text=titulo)
-            self.tabla_bandas.column(clave, width=ancho, anchor='w',
+            self.tabla_bandas.column(clave, width=px(ancho), anchor='w',
                                      stretch=(clave == 'rango'))
         self.tabla_bandas.pack(fill='both', expand=True)
         for nombre, color in (('dentro', ui_theme.GREEN), ('al borde', ui_theme.YELLOW),
@@ -385,7 +413,7 @@ class SpectroApp:
                                      show='headings', selectmode='none', height=8)
         for clave, titulo, ancho in cols_eq:
             self.tabla_eq.heading(clave, text=titulo)
-            self.tabla_eq.column(clave, width=ancho, anchor='w')
+            self.tabla_eq.column(clave, width=px(ancho), anchor='w')
         self.tabla_eq.pack(fill='both', expand=True, padx=1, pady=(0, 1))
         self.tabla_eq.tag_configure('recortada', foreground=ui_theme.YELLOW)
 
@@ -397,7 +425,7 @@ class SpectroApp:
         con el sufijo _match.
         """
         hoja = tk.Frame(cuaderno, bg=PANEL)
-        cuaderno.add(hoja, text='  Match  ')
+        cuaderno.add(hoja, text='Match')
 
         aviso = tk.Label(
             hoja,
@@ -434,7 +462,8 @@ class SpectroApp:
                         style='Panel.TCheckbutton').pack(side='left', padx=(20, 0))
         tk.Entry(fila2, textvariable=self.match_sub_hz, width=6, bg=ui_theme.INPUT_BG,
                  fg=FG, insertbackground=BLUE_SOFT, relief='flat',
-                 font=fuente(9)).pack(side='left', padx=(6, 2))
+                 highlightthickness=1, highlightbackground=BORDER,
+                 highlightcolor=BLUE_SOFT, font=fuente(9)).pack(side='left', padx=(6, 2))
         tk.Label(fila2, text='Hz', bg=PANEL, fg=DIM,
                  font=fuente(9)).pack(side='left')
 
@@ -442,7 +471,8 @@ class SpectroApp:
                  font=fuente(9)).pack(side='left', padx=(20, 0))
         tk.Entry(fila2, textvariable=self.match_lufs, width=7, bg=ui_theme.INPUT_BG,
                  fg=FG, insertbackground=BLUE_SOFT, relief='flat',
-                 font=fuente(9)).pack(side='left', padx=(6, 2))
+                 highlightthickness=1, highlightbackground=BORDER,
+                 highlightcolor=BLUE_SOFT, font=fuente(9)).pack(side='left', padx=(6, 2))
         tk.Label(fila2, text='LUFS (vacio = el del perfil)', bg=PANEL, fg=DIM,
                  font=fuente(8)).pack(side='left')
 
@@ -453,7 +483,7 @@ class SpectroApp:
         self.btn_match.pack(side='left')
         self.btn_match.config(state='disabled')
         self.barra_match = ttk.Progressbar(fila3, mode='determinate',
-                                           maximum=9, length=140)
+                                           maximum=9, length=px(140))
         self.lbl_match = tk.Label(fila3, text='Elegi un tema y un perfil',
                                   bg=PANEL, fg=DIM, anchor='w', font=fuente(9))
         self.lbl_match.pack(side='left', padx=(14, 0), fill='x', expand=True)
@@ -1424,7 +1454,9 @@ def main():
     # una ventana nueva por cada uno en vez de trabajar
     multiprocessing.freeze_support()
 
+    ui_theme.activar_dpi()   # antes de crear la raiz, o Windows ya la estiro
     root = TkinterDnD.Tk() if HAS_DND else tk.Tk()
+    ui_theme.preparar_ventana(root)
     app = SpectroApp(root)
 
     # Archivos arrastrados sobre el icono del .exe, o pasados por linea de comandos
