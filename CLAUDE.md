@@ -15,6 +15,7 @@ The README (in Spanish) explains the detection method, metrics and thresholds in
 Use the venv interpreter: `.venv\Scripts\python.exe` (Python 3.7+).
 
 ```
+python -m venv .venv                                    # .venv is gitignored, create it on a fresh clone
 .venv\Scripts\python.exe -m pip install -r requirements.txt
 
 .venv\Scripts\python.exe spek_gui.py                                    # window
@@ -51,7 +52,7 @@ It returns a dict (`db`, `side_db`, `freqs`, `times`, `verdict`, `master`, `fing
 
 **GUI** is tkinter (with `tkinterdnd2` for drag-and-drop). Background threads push results to a `queue`, and the Tk thread drains it with `root.after`. `main()` calls `multiprocessing.freeze_support()`, which the frozen exe needs for `spectro_batch`. It accepts paths in argv, which is how files dropped on the exe's icon arrive.
 
-**`ui_theme.py`** holds the colors and fonts. Each value is copied from `TicketOnlineFrontend/src/styles/_variables.scss` and annotated with the SCSS variable it comes from.
+**`ui_theme.py`** holds the colors and fonts. Each value is copied from `TicketOnlineFrontend/src/styles/_variables.scss` and annotated with the SCSS variable it comes from. `spectro_core` keeps its own copy of the chart and verdict colors (`CHART_*`, `VERDICT_COLORS`) instead of importing `ui_theme`, because the batch workers and the CLI load `spectro_core` and must not pull in tkinter. When a theme color changes, update both files.
 
 **`referencias/`** holds one-off reference profiles (Guy J, GMJ). Each has an `.md` write-up and a JSON of the data, extracted with `extraer_perfil.py`. That script is not part of the app.
 
